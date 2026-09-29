@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SeatPlan — Exam Hall Seating Generator</title>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; }
+        body { background-color: #f4f6f9; padding: 20px; color: #333; }
+        h1 { text-align: center; margin-bottom: 20px; color: #1a252f; }
+        .container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1200px; margin: 0 auto; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .full-width { grid-column: 1 / -1; }
+        h2 { font-size: 1.2rem; margin-bottom: 15px; color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 5px; }
+        label { display: block; margin-top: 10px; font-weight: 600; font-size: 0.9rem; }
+        input, select { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; }
+        button { margin-top: 15px; width: 100%; padding: 10px; background-color: #3498db; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        button:hover { background-color: #2980b9; }
+        .grid-view { display: grid; gap: 15px; margin-top: 20px; }
+        .seat { border: 1px solid #27ae60; background: #e8f8f5; border-radius: 6px; padding: 15px; text-align: center; }
+        .seat strong { color: #27ae60; display: block; font-size: 1.1rem; margin-bottom: 5px; }
+        .alert { margin-top: 10px; padding: 10px; border-radius: 4px; font-size: 0.9rem; display: none; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+
+<h1>SeatPlan — Exam Hall Seating Generator</h1>
+
+<div class="container">
+    <!-- 1. Add Exam Hall -->
+    <div class="card">
+        <h2>1. Register Exam Hall</h2>
+        <form id="hallForm">
+            <label>Hall Name</label>
+            <input type="text" id="hallName" placeholder="e.g., Main Hall 1" required>
+            <label>Total Rows</label>
+            <input type="number" id="totalRows" min="1" required>
+            <label>Total Columns</label>
+            <input type="number" id="totalColumns" min="1" required>
+            <label>Total Capacity</label>
+            <input type="number" id="capacity" min="1" required>
+            <button type="submit">Save Hall</button>
+        </form>
+        <div id="hallAlert" class="alert"></div>
+    </div>
+
+    <!-- 2. Add Student -->
+    <div class="card">
+        <h2>2. Register Student</h2>
+        <form id="studentForm">
+            <label>Register Number</label>
+            <input type="text" id="regNo" placeholder="e.g., 732822104001" required>
+            <label>Student Name</label>
+            <input type="text" id="studentName" placeholder="e.g., Alex" required>
+            <label>Class / Section</label>
+            <input type="text" id="className" placeholder="e.g., CSE-A" required>
+            <button type="submit">Save Student</button>
+        </form>
+        <div id="studentAlert" class="alert"></div>
+    </div>
+
+    <!-- 3. Generate Allocation -->
+    <div class="card full-width">
+        <h2>3. Auto-Generate Seating Arrangement</h2>
+        <div style="display: flex; gap: 15px;">
+            <div style="flex: 1;">
+                <label>Hall ID</label>
+                <input type="number" id="genHallId" placeholder="1" required>
+            </div>
+            <div style="flex: 1;">
+                <label>Session Name</label>
+                <input type="text" id="genSession" placeholder="FN or AN" required>
+            </div>
+            <div style="flex: 2;">
+                <label>Student IDs (Comma Separated)</label>
+                <input type="text" id="genStudentIds" placeholder="1, 2, 3, 4" required>
+            </div>
+        </div>
+        <button onclick="generatePlan()">Generate Seating Plan</button>
+        <div id="genAlert" class="alert"></div>
+    </div>
+
+    <!-- 4. Seating Chart Display -->
+    <div class="card full-width">
+        <h2>4. Hall Seating Chart View</h2>
+        <div style="display: flex; gap: 15px;">
+            <input type="number" id="viewHallId" placeholder="Hall ID (e.g. 1)">
+            <input type="text" id="viewSession" placeholder="Session (e.g. FN)">
+            <button style="margin-top:0; width: 200px;" onclick="loadSeatingChart()">View Chart</button>
+        </div>
+        <div id="seatingGrid" class="grid-view"></div>
+    </div>
+</div>
+
+<script>
+    const API_URL = "http://localhost:8080/api";
+
+    function showAlert(id, msg, isError = false) {
+        const el = document.getElementById(id);
+        el.className = `alert ${isError ? 'error' : 'success'}`;
+        el.innerText = msg;
+        el.style.display = 'block';
+        setTimeout(() => el.style.display = 'none', 4000);
+    }
+
+    // 1. Submit Hall
+    document.getElementById('hallForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const data = {
+            hallName: document.getElementById('hallName').value,
+            totalRows: parseInt(document.getElementById('totalRows').value),
+            totalColumns: parseInt(document.getElementById('totalColumns').value),
+            capacity: parseInt(document.getElementById('capacity').value)
+        };
+        try {
+            const res = await fetch(`${API_URL}/halls`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            if (res.ok) {
+                showAlert('hallAlert', 'Hall saved successfully!');
+                e.target.reset();
+            } else {
+                showAlert('hallAlert', 'Failed to save hall.', true);
+            }
+        } catch (err) { showAlert('hallAlert', err.message, true); }
+    });
+
+    // 2. Submit Student
+    document.getElementById('studentForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const data = {
+            registerNumber: document.getElementById('regNo').value,
+            name: document.getElementById('studentName').value,
+            className: document.getElementById('className').value
+        };
+        try {
+            const res = await fetch(`${API_URL}/students`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            if (res.ok) {
+                showAlert('studentAlert', 'Student saved successfully!');
+                e.target.reset();
+            } else {
+                showAlert('studentAlert', 'Failed to save student.', true);
+            }
+        } catch (err) { showAlert('studentAlert', err.message, true); }
+    });
+
+    // 3. Generate Seating Plan
+    async function generatePlan() {
+        const hallId = document.getElementById('genHallId').value;
+        const session = document.getElementById('genSession').value;
+        const idsInput = document.getElementById('genStudentIds').value;
+
+        const studentIds = idsInput.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+
+        try {
+            const res = await fetch(`${API_URL}/allocations/generate?hallId=${hallId}&sessionName=${session}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(studentIds)
+            });
+            const result = await res.json();
+            if (res.ok) {
+                showAlert('genAlert', `Seating plan generated for ${result.length} students!`);
+            } else {
+                showAlert('genAlert', result.message || 'Generation failed.', true);
+            }
+        } catch (err) { showAlert('genAlert', err.message, true); }
+    }
+
+    // 4. Load Seating Chart Grid
+  async function loadSeatingChart() {
+    const hallId = document.getElementById('viewHallId').value;
+    const session = document.getElementById('viewSession').value;
+    const grid = document.getElementById('seatingGrid');
+    grid.innerHTML = '';
+
+    if (!hallId || !session) {
+        alert('Please enter both Hall ID and Session Name.');
+        return;
+    }
+
+    try {
+        // 1. Fetch all halls to get the exact totalColumns configured for this hall
+        const hallRes = await fetch(`${API_URL}/halls`);
+        const halls = await hallRes.json();
+        const currentHall = halls.find(h => h.id == hallId);
+
+        // 2. Fetch allocations
+        const res = await fetch(`${API_URL}/allocations/hall/${hallId}?sessionName=${session}`);
+        const allocations = await res.json();
+
+        if (!allocations || !allocations.length) {
+            grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center;">No seating plan found for this hall and session.</p>';
+            return;
+        }
+
+        // 3. Set columns using hall.totalColumns (Fallback to highest colNo)
+        const totalCols = (currentHall && currentHall.totalColumns)
+            ? currentHall.totalColumns
+            : Math.max(...allocations.map(a => a.colNo));
+
+        grid.style.gridTemplateColumns = `repeat(${totalCols}, 1fr)`;
+
+        // 4. Sort allocations sequentially by rowNo then colNo
+        allocations.sort((a, b) => (a.rowNo - b.rowNo) || (a.colNo - b.colNo));
+
+        // 5. Render seats using the correct JSON properties (a.rowNo & a.colNo)
+        allocations.forEach(alloc => {
+            const box = document.createElement('div');
+            box.className = 'seat';
+            box.innerHTML = `
+                <strong>Row ${alloc.rowNo}, Col ${alloc.colNo}</strong>
+                <div style="font-size: 1.05rem; font-weight: 600; margin: 4px 0;">${alloc.student.name}</div>
+                <small style="color: #555;">(${alloc.student.className})</small>
+            `;
+            grid.appendChild(box);
+        });
+
+    } catch (err) {
+        alert('Error loading seating chart: ' + err.message);
+    }
+}
+</script>
+</body>
+</html>
